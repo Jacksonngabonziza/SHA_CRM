@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(python manage.py migrate)",
+      "Bash(python manage.py check)",
+      "Bash(grep -v \"^--$\")",
+      "Bash(python manage.py expire_quotes --dry-run)",
+      "Bash(python manage.py send_followup_reminders --dry-run)",
+      "Bash(python manage.py makemigrations installations --name warranty_claims)",
+      "Bash(python manage.py seed_sunshare_products --dry-run)",
+      "Bash(python manage.py seed_sunshare_products)",
+      "Bash(python manage.py makemigrations quotes --name add_num_inverters)",
+      "Bash(python -c \"from apps.installations.report_generator import generate_installation_report; print\\('OK'\\)\")",
+      "Bash(python manage.py makemigrations installations --name=\"log_created_at_editable\")",
+      "Bash(python manage.py migrate installations)",
+      "Bash(/Users/jackson/MOCA/venv/bin/python manage.py makemigrations accounts --name=\"company_settings_extra_fields\")"
+    ]
+  }
+}

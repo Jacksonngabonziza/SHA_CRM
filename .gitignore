@@ -1,0 +1,32 @@
+# ── Secrets (never commit these) ─────────────────────────────────────────────
+backend/.env
+frontend/.env.local
+frontend/.env.production
+ssl/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+*.egg
+
+# ── Django ────────────────────────────────────────────────────────────────────
+backend/staticfiles/
+backend/media/
+*.sqlite3
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+frontend/.next/
+frontend/out/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+*.log
