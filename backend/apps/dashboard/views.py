@@ -9,7 +9,7 @@ from apps.clients.models import Client
 from apps.quotes.models import Quote
 from apps.products.models import Product
 from apps.clients.serializers import ClientListSerializer
-from apps.quotes.serializers import QuoteListSerializer
+from apps.quotes.serializers import QuoteListSerializer, QuoteSerializer
 
 
 @api_view(['GET'])
@@ -23,7 +23,9 @@ def dashboard_stats(request):
 
     # ── Base querysets filtered by role ───────────────────────────────────────
     client_qs = Client.objects.all() if is_admin else Client.objects.filter(created_by=user)
-    quote_qs  = Quote.objects.all()  if is_admin else Quote.objects.filter(created_by=user)
+    _all_qs   = Quote.objects.all()  if is_admin else Quote.objects.filter(created_by=user)
+    quote_qs  = _all_qs.filter(quote_type=Quote.TYPE_INSTALLATION)
+    order_qs  = _all_qs.filter(quote_type=Quote.TYPE_PRODUCT_ORDER)
 
     # ── Client stats ──────────────────────────────────────────────────────────
     total_clients     = client_qs.count()
@@ -84,12 +86,20 @@ def dashboard_stats(request):
         from apps.accounts.models import User
         from apps.accounts.serializers import UserSerializer
         performers = (
-            Quote.objects.filter(status='approved')
+            Quote.objects.filter(status='approved', quote_type=Quote.TYPE_INSTALLATION)
             .values('created_by__id', 'created_by__first_name', 'created_by__last_name', 'created_by__username')
             .annotate(won=Count('id'), revenue=Sum('total_price_rwf'))
             .order_by('-revenue')[:5]
         )
         top_performers = list(performers)
+
+    # ── Alerts ───────────────────────────────────────────────────────────────────
+    expiring_soon = Quote.objects.filter(
+        quote_type=Quote.TYPE_INSTALLATION,
+        status__in=('draft', 'sent'),
+        valid_until__gte=today,
+        valid_until__lte=today + timedelta(days=7),
+    ).select_related('client')[:10]
 
     return Response({
         'is_admin': is_admin,
@@ -119,6 +129,15 @@ def dashboard_stats(request):
         'products': product_stats,
         'recent_quotes': QuoteListSerializer(quote_qs.order_by('-created_at')[:5], many=True).data,
         'recent_clients': ClientListSerializer(client_qs.order_by('-created_at')[:5], many=True).data,
+        'alerts': {
+            'expiring_quotes': QuoteListSerializer(expiring_soon, many=True).data,
+            'expiring_count': expiring_soon.count(),
+        },
+        'orders': {
+            'total': order_qs.count(),
+            'this_month': order_qs.filter(created_at__date__gte=m_start).count(),
+            'won': order_qs.filter(status='approved').count(),
+        },
         'monthly_data': monthly,
         'top_performers': top_performers,
     })

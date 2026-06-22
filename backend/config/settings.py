@@ -38,6 +38,8 @@ INSTALLED_APPS = [
     'apps.reports',
     'apps.referrals',
     'apps.activity.apps.ActivityConfig',
+    'apps.expenses.apps.ExpensesConfig',
+    'apps.purchases.apps.PurchasesConfig',
 ]
 
 MIDDLEWARE = [

@@ -115,6 +115,8 @@ class CompanySettings(models.Model):
 
     # Company identity (used in PDFs and public pages)
     company_name    = models.CharField(max_length=200, default='SolarHope Africa')
+    company_tin     = models.CharField(max_length=50,  blank=True, default='145206514',
+                                       help_text='TIN number printed on official documents')
     company_phone   = models.CharField(max_length=50,  default='+250 780 348 624')
     company_email   = models.EmailField(default='info@solarhopeafrica.com')
     company_website = models.CharField(max_length=200, default='www.solarhopeafrica.com')
@@ -140,6 +142,22 @@ class CompanySettings(models.Model):
     default_peak_sun_hours = models.DecimalField(max_digits=4,  decimal_places=1, default=Decimal('5.5'))
     default_backup_hours   = models.IntegerField(default=8)
     default_valid_days     = models.IntegerField(default=30)
+
+    # Contractor / sales commission
+    sales_commission_pct  = models.DecimalField(
+        max_digits=5, decimal_places=4, default=Decimal('0.10'),
+        help_text='Fraction of approved quote value paid to contractor (e.g. 0.10 = 10%)',
+    )
+    sales_commission_name = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text='Name of contractor / sales person who earns this commission',
+    )
+
+    # Role-based access control — which modules each non-admin role can see
+    role_permissions = models.JSONField(
+        default=dict, blank=True,
+        help_text='Maps role name to list of module keys the role can access.',
+    )
 
     class Meta:
         db_table = 'company_settings'

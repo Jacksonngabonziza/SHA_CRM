@@ -107,6 +107,36 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Expiring quotes alert */}
+      {(stats?.alerts?.expiring_count ?? 0) > 0 && stats && (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 bg-blue-50 border-b border-blue-200">
+            <div className="flex items-center gap-2">
+              <Clock size={16} className="text-blue-600" />
+              <span className="text-sm font-semibold text-blue-800">Quotes Expiring Soon</span>
+              <span className="text-xs bg-blue-500 text-white rounded-full px-2 py-0.5 font-medium">
+                {stats.alerts.expiring_count} within 7 days
+              </span>
+            </div>
+            <Link href="/quotes" className="text-xs font-medium text-blue-700 hover:underline">View quotes →</Link>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {stats.alerts.expiring_quotes.map(q => (
+              <Link key={q.id} href={`/quotes/${q.id}`}
+                className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors">
+                <div>
+                  <p className="text-sm font-semibold text-[#091928]">{q.ref_number}</p>
+                  <p className="text-xs text-gray-400">{q.client_name ?? q.client_detail?.name}</p>
+                </div>
+                <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                  Expires {formatDate(q.valid_until)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Low-stock alert */}
       {lowStockProducts && lowStockProducts.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">

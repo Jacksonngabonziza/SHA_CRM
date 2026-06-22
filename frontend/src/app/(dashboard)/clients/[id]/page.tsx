@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { clientsApi, quotesApi, surveysApi } from '@/lib/api'
+import { clientsApi, quotesApi, surveysApi, ordersApi } from '@/lib/api'
 import { SiteSurvey } from '@/types'
 import { formatRWF, formatDate, formatDateTime, STATUS_COLORS, CLIENT_TYPE_ICONS, cn } from '@/lib/utils'
 import { Phone, MapPin, Mail, Plus, ArrowLeft, Edit, Calendar, Loader2, ClipboardList } from 'lucide-react'
@@ -39,6 +39,11 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     queryFn: async () => (await surveysApi.list({ client: id.toString() })).data,
   })
 
+  const { data: ordersData } = useQuery({
+    queryKey: ['client-orders', id],
+    queryFn: async () => (await ordersApi.list({ client: id.toString() })).data,
+  })
+
   const addNoteMutation = useMutation({
     mutationFn: () => clientsApi.addNote(id, note),
     onSuccess: () => {
@@ -70,6 +75,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
   const notes = notesData?.results || notesData || []
   const quotes = quotesData?.results || quotesData || []
   const surveys: SiteSurvey[] = surveysData?.results ?? surveysData ?? []
+  const orders = ordersData?.results ?? ordersData ?? []
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -211,38 +217,72 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           </div>
         </div>
 
-        {/* Right: Quotes */}
-        <div className="md:col-span-2 card">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h3 className="font-semibold">Quotes ({quotes.length})</h3>
-            <Link href={`/quotes/new?client=${id}`} className="btn-amber text-sm py-1.5">
-              <Plus size={14} /> New Quote
-            </Link>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {quotes.length === 0 && (
-              <p className="text-sm text-gray-400 p-6 text-center">No quotes yet</p>
-            )}
-            {quotes.map((q: { id: number; ref_number: string; system_size_kwp: number; total_price_rwf: number; status: string; status_display: string; created_at: string }) => (
-              <Link
-                key={q.id} href={`/quotes/${q.id}`}
-                className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-[#091928]">{q.ref_number}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{formatDateTime(q.created_at)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-700">{q.system_size_kwp} kWp</p>
-                  <p className="text-xs text-gray-400">System size</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-gray-900">{formatRWF(q.total_price_rwf)}</p>
-                  <span className={cn('badge', STATUS_COLORS[q.status])}>{q.status_display}</span>
-                </div>
+        {/* Right: Quotes + Orders */}
+        <div className="md:col-span-2 space-y-4">
+          <div className="card">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h3 className="font-semibold">Quotes ({quotes.length})</h3>
+              <Link href={`/quotes/new?client=${id}`} className="btn-amber text-sm py-1.5">
+                <Plus size={14} /> New Quote
               </Link>
-            ))}
+            </div>
+            <div className="divide-y divide-gray-50">
+              {quotes.length === 0 && (
+                <p className="text-sm text-gray-400 p-6 text-center">No quotes yet</p>
+              )}
+              {quotes.map((q: { id: number; ref_number: string; system_size_kwp: number; total_price_rwf: number; status: string; status_display: string; created_at: string }) => (
+                <Link
+                  key={q.id} href={`/quotes/${q.id}`}
+                  className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-[#091928]">{q.ref_number}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{formatDateTime(q.created_at)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-gray-700">{q.system_size_kwp} kWp</p>
+                    <p className="text-xs text-gray-400">System size</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-gray-900">{formatRWF(q.total_price_rwf)}</p>
+                    <span className={cn('badge', STATUS_COLORS[q.status])}>{q.status_display}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
+
+          {orders.length > 0 && (
+            <div className="card">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h3 className="font-semibold">Product Orders ({orders.length})</h3>
+                <Link href={`/orders/new`} className="btn-outline text-sm py-1.5">
+                  <Plus size={14} /> New Order
+                </Link>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {orders.map((o: { id: number; ref_number: string; total_price_rwf: number; status: string; status_display: string; created_at: string; line_items?: { id?: number }[] }) => (
+                  <Link
+                    key={o.id} href={`/orders/${o.id}`}
+                    className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-[#091928]">{o.ref_number}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDateTime(o.created_at)}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-gray-700">{o.line_items?.length ?? 0}</p>
+                      <p className="text-xs text-gray-400">Items</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-gray-900">{formatRWF(o.total_price_rwf)}</p>
+                      <span className={cn('badge', STATUS_COLORS[o.status])}>{o.status_display}</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

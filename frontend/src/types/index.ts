@@ -208,15 +208,29 @@ export interface Appliance {
 
 // ── Quotes ────────────────────────────────────────────────────────────────────
 export type QuoteStatus = 'draft' | 'sent' | 'approved' | 'rejected' | 'expired'
+export type QuoteType = 'installation' | 'product_order'
+
+export interface QuoteLineItem {
+  id?: number
+  product: number | null
+  product_detail?: Product | null
+  description: string
+  quantity: number
+  unit_price: number
+  total?: number
+}
 
 export interface Quote {
   id: number
   ref_number: string
+  quote_type: QuoteType
+  quote_type_display: string
   client: number
   client_detail: Client
   client_name?: string
   client_phone?: string
   appliances: Appliance[]
+  line_items: QuoteLineItem[]
   total_daily_kwh: number
   design_daily_kwh: number
   system_size_kwp: number
@@ -336,6 +350,11 @@ export interface DashboardStats {
     conversion_rate: number
     by_status: Record<QuoteStatus, number>
   }
+  orders: {
+    total: number
+    this_month: number
+    won: number
+  }
   revenue: {
     total: number
     this_month: number
@@ -350,6 +369,10 @@ export interface DashboardStats {
   products: {
     total: number
     out_of_stock: number
+  }
+  alerts: {
+    expiring_quotes: Quote[]
+    expiring_count: number
   }
   recent_quotes: Quote[]
   recent_clients: Client[]
@@ -550,6 +573,7 @@ export interface RevenueReport {
 // ── Company Settings ──────────────────────────────────────────────────────────
 export interface CompanySettings {
   company_name: string
+  company_tin: string
   company_phone: string
   company_email: string
   company_website: string
@@ -569,6 +593,136 @@ export interface CompanySettings {
   default_peak_sun_hours: number
   default_backup_hours: number
   default_valid_days: number
+  sales_commission_pct: number
+  sales_commission_name: string
+  role_permissions: Record<string, string[]>
+}
+
+// ── Expenses ──────────────────────────────────────────────────────────────────
+export type ExpenseCategory =
+  | 'rent' | 'utilities' | 'fuel' | 'materials'
+  | 'salaries' | 'contractor' | 'marketing' | 'transport' | 'maintenance' | 'other'
+
+export type ExpenseFrequency = 'monthly' | 'quarterly' | 'annual'
+
+export interface Expense {
+  id: number
+  description: string
+  category: ExpenseCategory
+  category_display: string
+  amount_rwf: number
+  date: string
+  quote: number | null
+  quote_ref: string | null
+  notes: string
+  recorded_by: number | null
+  recorded_by_name: string
+  created_at: string
+}
+
+export interface RecurringExpense {
+  id: number
+  name: string
+  category: ExpenseCategory
+  category_display: string
+  amount_rwf: number
+  frequency: ExpenseFrequency
+  frequency_display: string
+  next_due_date: string
+  is_active: boolean
+  is_overdue: boolean
+  notes: string
+  created_by: number | null
+  created_at: string
+}
+
+export interface ExpenseSummary {
+  year: number
+  month: number | null
+  grand_total: number
+  by_category: { category: string; total: number }[]
+  overdue_recurring: number
+}
+
+// ── Purchases ─────────────────────────────────────────────────────────────────
+export interface Supplier {
+  id: number
+  name: string
+  contact_name: string
+  phone: string
+  email: string
+  address: string
+  notes: string
+  created_at: string
+}
+
+export interface PurchaseOrderItem {
+  id: number
+  purchase_order: number
+  product: number
+  product_name: string
+  product_brand: string
+  product_model: string
+  quantity: number
+  unit_cost_rwf: number
+  line_total: number
+}
+
+export type PurchaseOrderStatus = 'draft' | 'ordered' | 'received' | 'cancelled'
+
+export interface PurchaseOrder {
+  id: number
+  supplier: number
+  supplier_name: string
+  ref_number: string
+  status: PurchaseOrderStatus
+  status_display: string
+  order_date: string
+  received_date: string | null
+  total_cost_rwf: number
+  notes: string
+  items: PurchaseOrderItem[]
+  created_by: number | null
+  created_by_name: string
+  created_at: string
+  updated_at: string
+}
+
+// ── Financial Report ──────────────────────────────────────────────────────────
+export interface FinancialCategoryBreakdown {
+  category: string
+  label: string
+  total: number
+}
+
+export interface FinancialMonthTrend {
+  month: string
+  revenue: number
+  cash: number
+  expenses: number
+  cogs: number
+  net_profit: number
+}
+
+export interface FinancialReport {
+  period: { from: string; to: string }
+  revenue: {
+    installation: number
+    orders: number
+    gross: number
+    install_count: number
+    order_count: number
+  }
+  cash: { collected: number; outstanding: number }
+  cogs: number
+  expenses: { total: number; by_category: FinancialCategoryBreakdown[] }
+  profit: {
+    gross: number
+    gross_margin_pct: number
+    net: number
+    net_margin_pct: number
+  }
+  monthly_trend: FinancialMonthTrend[]
 }
 
 // ── Pagination ────────────────────────────────────────────────────────────────

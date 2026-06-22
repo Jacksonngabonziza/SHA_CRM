@@ -4,7 +4,9 @@ from .views import (
     calculate_quote, quote_pdf, email_quote,
     whatsapp_share, create_quote_version,
     update_quote_status, shared_quote, submit_feedback,
-    export_quotes_csv,
+    export_quotes_csv, ProductOrderListCreateView,
+    ProductOrderDetailView, product_order_pdf,
+    email_order, order_whatsapp, shared_order,
 )
 
 urlpatterns = [
@@ -19,4 +21,12 @@ urlpatterns = [
     path('shared/<uuid:token>/', shared_quote, name='shared_quote'),
     path('shared/<uuid:token>/feedback/', submit_feedback, name='submit_feedback'),
     path('export/', export_quotes_csv, name='export_quotes'),
+    # Product orders
+    path('orders/', ProductOrderListCreateView.as_view(), name='product_order_list'),
+    path('orders/<int:pk>/', ProductOrderDetailView.as_view(), name='product_order_detail'),
+    path('orders/<int:pk>/pdf/', product_order_pdf, name='product_order_pdf'),
+    path('orders/<int:pk>/email/', email_order, name='order_email'),
+    path('orders/<int:pk>/whatsapp/', order_whatsapp, name='order_whatsapp'),
+    path('orders/<int:pk>/status/', update_quote_status, name='order_status'),
+    path('orders/shared/<uuid:token>/', shared_order, name='shared_order'),
 ]

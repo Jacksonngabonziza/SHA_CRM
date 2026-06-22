@@ -3,30 +3,51 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
+import { useQuery } from '@tanstack/react-query'
+import { companySettingsApi } from '@/lib/api'
 import {
   LayoutDashboard, Users, FileText, Package,
   LogOut, Bell, ChevronRight, Menu, X,
-  Wrench, CreditCard, BarChart2, ClipboardList, Share2, Settings, ShieldCheck, UserCheck, Activity,
+  Wrench, CreditCard, BarChart2, ClipboardList, Share2, Settings, ShieldCheck, UserCheck, Activity, ShoppingCart,
+  Receipt, ShoppingBag,
 } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
-const NAV = [
-  { href: '/dashboard',     label: 'Dashboard',     icon: LayoutDashboard, adminOnly: false },
-  { href: '/clients',       label: 'Clients',       icon: Users,           adminOnly: false },
-  { href: '/quotes',        label: 'Quotes',        icon: FileText,        adminOnly: false },
-  { href: '/products',      label: 'Products',      icon: Package,         adminOnly: false },
-  { href: '/installations', label: 'Installations', icon: Wrench,          adminOnly: false },
-  { href: '/warranty',      label: 'Warranty',      icon: ShieldCheck,     adminOnly: false },
-  { href: '/payments',      label: 'Payments',      icon: CreditCard,      adminOnly: false },
-  { href: '/surveys',       label: 'Surveys',       icon: ClipboardList,   adminOnly: false },
-  { href: '/referrals',     label: 'Referrals',     icon: Share2,          adminOnly: false },
-  { href: '/agents',        label: 'Field Agents',  icon: UserCheck,       adminOnly: true  },
-  { href: '/users',         label: 'Users',         icon: Users,           adminOnly: true  },
-  { href: '/reports',       label: 'Reports',       icon: BarChart2,       adminOnly: true  },
-  { href: '/activity',      label: 'Activity Log',  icon: Activity,        adminOnly: true  },
-  { href: '/settings',      label: 'Settings',      icon: Settings,        adminOnly: false },
+type NavItem = {
+  href: string
+  label: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  icon: React.ElementType<any>
+  permKey?: string
+  adminLocked?: boolean
+  alwaysVisible?: boolean
+}
+
+const NAV: NavItem[] = [
+  { href: '/dashboard',     label: 'Dashboard',      icon: LayoutDashboard, alwaysVisible: true },
+  { href: '/clients',       label: 'Clients',        icon: Users,           permKey: 'clients' },
+  { href: '/quotes',        label: 'Quotes',         icon: FileText,        permKey: 'quotes' },
+  { href: '/orders',        label: 'Product Orders', icon: ShoppingCart,    permKey: 'orders' },
+  { href: '/products',      label: 'Products',       icon: Package,         permKey: 'products' },
+  { href: '/installations', label: 'Installations',  icon: Wrench,          permKey: 'installations' },
+  { href: '/warranty',      label: 'Warranty',       icon: ShieldCheck,     permKey: 'warranty' },
+  { href: '/payments',      label: 'Payments',       icon: CreditCard,      permKey: 'payments' },
+  { href: '/expenses',      label: 'Expenses',       icon: Receipt,         permKey: 'expenses' },
+  { href: '/purchases',     label: 'Purchases',      icon: ShoppingBag,     permKey: 'purchases' },
+  { href: '/surveys',       label: 'Surveys',        icon: ClipboardList,   permKey: 'surveys' },
+  { href: '/referrals',     label: 'Referrals',      icon: Share2,          permKey: 'referrals' },
+  { href: '/agents',        label: 'Field Agents',   icon: UserCheck,       adminLocked: true },
+  { href: '/users',         label: 'Users',          icon: Users,           adminLocked: true },
+  { href: '/reports',       label: 'Reports',        icon: BarChart2,       adminLocked: true },
+  { href: '/activity',      label: 'Activity Log',   icon: Activity,        adminLocked: true },
+  { href: '/settings',      label: 'Settings',       icon: Settings,        permKey: 'settings' },
+]
+
+const DEFAULT_SALES_PERMS = [
+  'clients', 'quotes', 'orders', 'products', 'installations',
+  'warranty', 'payments', 'surveys', 'referrals', 'settings',
 ]
 
 export default function DashboardLayout({ children }: { readonly children: React.ReactNode }) {
@@ -34,6 +55,25 @@ export default function DashboardLayout({ children }: { readonly children: React
   const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const { data: settings, isSuccess: settingsLoaded } = useQuery({
+    queryKey: ['company-settings'],
+    queryFn: async () => (await companySettingsApi.get()).data,
+    staleTime: 30_000,
+    enabled: !!isAuthenticated && user?.role !== 'admin',
+  })
+
+  const allowedKeys: string[] | null =
+    user?.role === 'admin'
+      ? null
+      : (settings?.role_permissions?.[user?.role ?? ''] ?? DEFAULT_SALES_PERMS)
+
+  const visibleNav = NAV.filter(item => {
+    if (item.adminLocked) return user?.role === 'admin'
+    if (item.alwaysVisible) return true
+    if (user?.role === 'admin') return true
+    return allowedKeys?.includes(item.permKey ?? '') ?? false
+  })
 
   // Open sidebar by default on desktop
   useEffect(() => {
@@ -49,6 +89,23 @@ export default function DashboardLayout({ children }: { readonly children: React
     if (!isAuthenticated) router.replace('/login')
     else if (user?.role === 'field_agent') router.replace('/agent/dashboard')
   }, [isAuthenticated, router])
+
+  // Enforce page-level access: redirect if the current page is not in the user's allowed keys
+  useEffect(() => {
+    if (!isAuthenticated || user?.role === 'admin') return
+    // Wait until permissions are loaded before enforcing (avoid redirect on initial render)
+    if (!settingsLoaded) return
+
+    const currentItem = NAV.find(
+      item => item.permKey && (pathname === item.href || pathname.startsWith(item.href + '/'))
+    )
+    if (!currentItem) return  // dashboard, or admin-locked page (those redirect via backend)
+
+    const keys = settings?.role_permissions?.[user?.role ?? ''] ?? DEFAULT_SALES_PERMS
+    if (!keys.includes(currentItem.permKey ?? '')) {
+      router.replace('/dashboard')
+    }
+  }, [pathname, settings, settingsLoaded, isAuthenticated, user?.role, router])
 
   if (!isAuthenticated) return null
 
@@ -104,7 +161,7 @@ export default function DashboardLayout({ children }: { readonly children: React
 
         {/* Nav */}
         <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-          {NAV.filter(({ adminOnly }) => !adminOnly || user?.role === 'admin').map(({ href, label, icon: Icon }) => {
+          {visibleNav.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + '/')
             return (
               <Link

@@ -70,7 +70,7 @@ class CompanySettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanySettings
         fields = [
-            'company_name', 'company_phone', 'company_email',
+            'company_name', 'company_tin', 'company_phone', 'company_email',
             'company_website', 'company_tagline', 'company_address',
             'bank_name', 'bank_account', 'momo_number', 'momo_name',
             'payment_instructions',
@@ -78,6 +78,8 @@ class CompanySettingsSerializer(serializers.ModelSerializer):
             'grid_tariff_rwf_kwh', 'installation_pct', 'accessories_pct',
             'safety_margin_pct', 'default_peak_sun_hours',
             'default_backup_hours', 'default_valid_days',
+            'sales_commission_pct', 'sales_commission_name',
+            'role_permissions',
         ]
 
 

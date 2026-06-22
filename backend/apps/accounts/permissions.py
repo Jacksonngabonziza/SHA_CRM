@@ -25,6 +25,13 @@ class IsAdminOrReadOnly(BasePermission):
         return request.user.role == 'admin'
 
 
+class IsAdminOrSales(BasePermission):
+    """Admin or sales can do anything (read and write). Field agents are excluded."""
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated
+                    and request.user.role in ('admin', 'sales'))
+
+
 class IsAdminOrOwner(BasePermission):
     """Admin sees everything. Sales sees only their own records."""
     def has_permission(self, request, view):

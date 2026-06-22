@@ -1,5 +1,7 @@
-from django.db.models.signals import pre_save
+from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
+
+_APPROVED_TRANSITION = set()  # track pk transitions across pre/post save
 
 
 @receiver(pre_save, sender='quotes.Quote')
@@ -13,6 +15,7 @@ def create_agent_commission(sender, instance, **kwargs):
         return
 
     if old.status != 'approved' and instance.status == 'approved':
+        _APPROVED_TRANSITION.add(instance.pk)
         client = instance.client_detail if hasattr(instance, 'client_detail') else None
         if client is None:
             try:
@@ -40,3 +43,33 @@ def create_agent_commission(sender, instance, **kwargs):
             quote=instance,
             defaults={'amount_rwf': amount},
         )
+
+
+@receiver(post_save, sender='quotes.Quote')
+def create_contractor_expense(sender, instance, created, **kwargs):
+    """Auto-create a contractor commission expense when a quote transitions to approved."""
+    if instance.pk not in _APPROVED_TRANSITION:
+        return
+    _APPROVED_TRANSITION.discard(instance.pk)
+    try:
+        from apps.accounts.models import CompanySettings
+        from apps.expenses.models import Expense
+        from decimal import Decimal
+        from django.utils import timezone
+        settings = CompanySettings.get()
+        pct = settings.sales_commission_pct
+        if not pct:
+            return
+        amount = Decimal(str(instance.total_price_rwf)) * pct
+        name   = settings.sales_commission_name or 'Contractor'
+        if not Expense.objects.filter(quote=instance, category='contractor').exists():
+            Expense.objects.create(
+                description=f"Commission for {name} — {instance.ref_number}",
+                category='contractor',
+                amount_rwf=amount,
+                date=timezone.now().date(),
+                quote=instance,
+                notes=f"{float(pct)*100:.1f}% of {instance.total_price_rwf} RWF",
+            )
+    except Exception:
+        pass  # never block the main flow

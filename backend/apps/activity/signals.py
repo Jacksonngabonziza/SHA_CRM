@@ -82,29 +82,34 @@ def quote_pre_save(sender, instance, **kwargs):
 @receiver(post_save, sender='quotes.Quote')
 def quote_post_save(sender, instance, created, **kwargs):
     old = _get_old(instance)
-    label = f"Quote: {instance.ref_number}"
+    is_order = getattr(instance, 'quote_type', 'installation') == 'product_order'
+    kind  = 'Order' if is_order else 'Quote'
+    rtype = 'order' if is_order else 'quote'
+    label = f"{kind}: {instance.ref_number}"
     if created:
         try:
             client_name = instance.client.name
         except Exception:
             client_name = '—'
-        _log('create', f"Created quote {instance.ref_number} for {client_name}",
-             'quote', instance.pk, label)
+        _log('create', f"Created {kind.lower()} {instance.ref_number} for {client_name}",
+             rtype, instance.pk, label)
     elif old and old.status != instance.status:
         action_map = {'approved': 'approve', 'rejected': 'reject', 'sent': 'send'}
         action = action_map.get(instance.status, 'status_change')
         _log(action,
-             f"Quote {instance.ref_number} status: {old.status} → {instance.status}",
-             'quote', instance.pk, label)
+             f"{kind} {instance.ref_number} status: {old.status} → {instance.status}",
+             rtype, instance.pk, label)
     else:
-        _log('update', f"Updated quote {instance.ref_number}",
-             'quote', instance.pk, label)
+        _log('update', f"Updated {kind.lower()} {instance.ref_number}",
+             rtype, instance.pk, label)
 
 
 @receiver(post_delete, sender='quotes.Quote')
 def quote_delete(sender, instance, **kwargs):
-    _log('delete', f"Deleted quote {instance.ref_number}",
-         'quote', instance.pk, f"Quote: {instance.ref_number}")
+    is_order = getattr(instance, 'quote_type', 'installation') == 'product_order'
+    kind = 'Order' if is_order else 'Quote'
+    _log('delete', f"Deleted {kind.lower()} {instance.ref_number}",
+         'order' if is_order else 'quote', instance.pk, f"{kind}: {instance.ref_number}")
 
 
 # ── Payments ──────────────────────────────────────────────────────────────────
@@ -119,7 +124,7 @@ def payment_post_save(sender, instance, created, **kwargs):
     label = f"Payment: {getattr(instance, 'quote_ref', instance.quote_id)}"
     if created:
         _log('create',
-             f"Recorded payment of {instance.amount_rwf} RWF on quote {getattr(instance, 'quote_ref', '')} by {instance.client_name}",
+             f"Recorded payment of {instance.amount_rwf} RWF on quote {getattr(instance, 'quote_ref', instance.quote_id)} by {instance.client.name}",
              'payment', instance.pk, label)
     elif old and old.status != instance.status:
         _log('status_change',

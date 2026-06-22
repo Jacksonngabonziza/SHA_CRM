@@ -4,13 +4,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
-from apps.accounts.permissions import IsAdminOrReadOnly
+from apps.accounts.permissions import IsAdminOrSales
 from .models import Product
 from .serializers import ProductSerializer, ProductListSerializer
 
 
 class ProductListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrSales]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields  = ['category', 'brand', 'in_stock', 'phase', 'is_all_in_one']
     search_fields     = ['name', 'brand', 'model']
@@ -27,7 +27,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
 class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset           = Product.objects.all()
     serializer_class   = ProductSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrSales]
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

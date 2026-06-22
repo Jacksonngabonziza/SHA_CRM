@@ -29,7 +29,12 @@ class Quote(models.Model):
     STATUS_REJECTED='rejected'; STATUS_EXPIRED='expired'
     STATUS_CHOICES=[('draft','Draft'),('sent','Sent to Client'),('approved','Approved'),('rejected','Rejected'),('expired','Expired')]
 
+    TYPE_INSTALLATION = 'installation'
+    TYPE_PRODUCT_ORDER = 'product_order'
+    TYPE_CHOICES = [('installation', 'Installation Quote'), ('product_order', 'Product Order')]
+
     ref_number   = models.CharField(max_length=30, unique=True, default=generate_ref)
+    quote_type   = models.CharField(max_length=20, choices=TYPE_CHOICES, default='installation')
     client       = models.ForeignKey('clients.Client', on_delete=models.PROTECT, related_name='quotes')
     created_by   = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, related_name='quotes')
     parent_quote = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='versions')
@@ -82,6 +87,22 @@ class Quote(models.Model):
         if not self.valid_until and self.valid_days:
             from datetime import timedelta
             self.valid_until = timezone.now().date() + timedelta(days=self.valid_days)
+        super().save(*args, **kwargs)
+
+
+class QuoteLineItem(models.Model):
+    quote       = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='line_items')
+    product     = models.ForeignKey('products.Product', on_delete=models.PROTECT, null=True, blank=True)
+    description = models.CharField(max_length=255)
+    quantity    = models.IntegerField(default=1)
+    unit_price  = models.DecimalField(max_digits=12, decimal_places=2)
+    total       = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        db_table = 'quote_line_items'
+
+    def save(self, *args, **kwargs):
+        self.total = self.unit_price * self.quantity
         super().save(*args, **kwargs)
 
 

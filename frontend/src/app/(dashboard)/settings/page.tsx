@@ -4,8 +4,116 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { authApi, companySettingsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { CompanySettings } from '@/types'
-import { Loader2, Save, KeyRound, User, Building2 } from 'lucide-react'
+import { Loader2, Save, KeyRound, User, Building2, ShieldCheck, Lock } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+const CONFIGURABLE_MODULES = [
+  { key: 'clients',       label: 'Clients' },
+  { key: 'quotes',        label: 'Quotes' },
+  { key: 'orders',        label: 'Product Orders' },
+  { key: 'products',      label: 'Products' },
+  { key: 'installations', label: 'Installations' },
+  { key: 'warranty',      label: 'Warranty Claims' },
+  { key: 'payments',      label: 'Payments' },
+  { key: 'expenses',      label: 'Expenses' },
+  { key: 'purchases',     label: 'Purchase Orders' },
+  { key: 'surveys',       label: 'Site Surveys' },
+  { key: 'referrals',     label: 'Referrals' },
+  { key: 'settings',      label: 'Settings (own profile)' },
+]
+
+const ADMIN_LOCKED_MODULES = ['Reports', 'Activity Log', 'Field Agents', 'Users']
+
+const DEFAULT_SALES_PERMS = [
+  'clients', 'quotes', 'orders', 'products', 'installations',
+  'warranty', 'payments', 'surveys', 'referrals', 'settings',
+]
+
+function RolePermissionsCard() {
+  const qc = useQueryClient()
+
+  const { data, isLoading } = useQuery<CompanySettings>({
+    queryKey: ['company-settings'],
+    queryFn: async () => (await companySettingsApi.get()).data,
+  })
+
+  const [salesPerms, setSalesPerms] = useState<string[]>(DEFAULT_SALES_PERMS)
+
+  useEffect(() => {
+    if (data) setSalesPerms(data.role_permissions?.['sales'] ?? DEFAULT_SALES_PERMS)
+  }, [data])
+
+  const mutation = useMutation({
+    mutationFn: (perms: string[]) =>
+      companySettingsApi.update({ role_permissions: { sales: perms } } as Record<string, unknown>),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['company-settings'] })
+      toast.success('Permissions saved')
+    },
+    onError: () => toast.error('Failed to save permissions'),
+  })
+
+  const toggle = (key: string) =>
+    setSalesPerms(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+
+  if (isLoading) return null
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center gap-3 mb-1">
+        <div className="p-2 bg-purple-100 rounded-lg text-purple-600"><ShieldCheck size={18} /></div>
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Access Control</h2>
+          <p className="text-xs text-gray-400">Control which modules the Sales role can access</p>
+        </div>
+      </div>
+      <div className="mt-5 space-y-5">
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Sales Role</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {CONFIGURABLE_MODULES.map(mod => {
+              const enabled = salesPerms.includes(mod.key)
+              return (
+                <button
+                  key={mod.key}
+                  type="button"
+                  onClick={() => toggle(mod.key)}
+                  className={`flex items-center justify-between px-4 py-2.5 rounded-lg border text-sm transition-all ${
+                    enabled
+                      ? 'border-[#EA9D13] bg-amber-50 text-[#091928]'
+                      : 'border-gray-200 bg-gray-50 text-gray-400'
+                  }`}
+                >
+                  <span className="font-medium">{mod.label}</span>
+                  <span className={`w-9 h-5 rounded-full relative transition-colors shrink-0 ${enabled ? 'bg-[#EA9D13]' : 'bg-gray-300'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${enabled ? 'left-4' : 'left-0.5'}`} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Admin Only (locked)</p>
+          <div className="flex flex-wrap gap-2">
+            {ADMIN_LOCKED_MODULES.map(label => (
+              <span key={label} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 text-xs text-gray-400">
+                <Lock size={11} />{label}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">These modules are always restricted to admins and cannot be granted to other roles.</p>
+        </div>
+        <div className="pt-1 border-t border-gray-100">
+          <button onClick={() => mutation.mutate(salesPerms)} disabled={mutation.isPending} className="btn-primary">
+            {mutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            Save Permissions
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function SettingsPage() {
   const qc = useQueryClient()
@@ -64,6 +172,9 @@ export default function SettingsPage() {
 
       {/* Company Settings — admin only */}
       {isAdmin && <CompanySettingsCard />}
+
+      {/* Role Permissions — admin only */}
+      {isAdmin && <RolePermissionsCard />}
 
       {/* Profile card */}
       <div className="card p-6">
@@ -192,6 +303,10 @@ function CompanySettingsCard() {
               <input id="cs-name" value={form.company_name ?? ''} onChange={e => set('company_name', e.target.value)} className="input" />
             </div>
             <div>
+              <label htmlFor="cs-tin" className="label">TIN Number</label>
+              <input id="cs-tin" value={form.company_tin ?? ''} onChange={e => set('company_tin', e.target.value)} className="input" placeholder="e.g. 145206514" />
+            </div>
+            <div>
               <label htmlFor="cs-tagline" className="label">Tagline</label>
               <input id="cs-tagline" value={form.company_tagline ?? ''} onChange={e => set('company_tagline', e.target.value)} className="input" />
             </div>
@@ -310,6 +425,37 @@ function CompanySettingsCard() {
             <div>
               <label htmlFor="cs-valid-days" className="label">Quote Valid Days</label>
               <input id="cs-valid-days" type="number" step="1" value={form.default_valid_days ?? ''} onChange={e => set('default_valid_days', Number(e.target.value))} className="input" />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Contractor Commission ── */}
+        <div className="border-t border-gray-100 pt-5">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contractor Commission</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="cs-comm-name" className="label">Contractor / Sales Person Name</label>
+              <input
+                id="cs-comm-name"
+                value={form.sales_commission_name ?? ''}
+                onChange={e => set('sales_commission_name', e.target.value)}
+                className="input"
+                placeholder="e.g. Jean Pierre"
+              />
+            </div>
+            <div>
+              <label htmlFor="cs-comm-pct" className="label">Commission Rate</label>
+              <input
+                id="cs-comm-pct"
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+                value={form.sales_commission_pct ?? ''}
+                onChange={e => set('sales_commission_pct', Number(e.target.value))}
+                className="input"
+              />
+              <p className="text-xs text-gray-400 mt-1">e.g. 0.10 = 10% of approved quote value</p>
             </div>
           </div>
         </div>

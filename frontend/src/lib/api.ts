@@ -184,6 +184,26 @@ export const quotesApi = {
   exportUrl: () => `${BASE_URL}/quotes/export/`,
 }
 
+// ── Product Orders ────────────────────────────────────────────────────────────
+export const ordersApi = {
+  list: (params?: Record<string, string>) =>
+    api.get('/quotes/orders/', { params }),
+  get: (id: number) => api.get(`/quotes/orders/${id}/`),
+  create: (data: Record<string, unknown>) =>
+    api.post('/quotes/orders/', data),
+  update: (id: number, data: Record<string, unknown>) =>
+    api.patch(`/quotes/orders/${id}/`, data),
+  updateStatus: (id: number, status: string) =>
+    api.patch(`/quotes/orders/${id}/status/`, { status }),
+  pdfUrl: (id: number) => `${BASE_URL}/quotes/orders/${id}/pdf/`,
+  email: (id: number, email?: string) =>
+    api.post(`/quotes/orders/${id}/email/`, email ? { email } : {}),
+  whatsapp: (id: number) =>
+    api.get(`/quotes/orders/${id}/whatsapp/`),
+  shared: (token: string) =>
+    api.get(`/quotes/orders/shared/${token}/`),
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export const dashboardApi = {
   stats: () => api.get('/dashboard/stats/'),
@@ -260,6 +280,10 @@ export const reportsApi = {
   monthly: (params?: { year?: number; month?: number }) =>
     api.get('/reports/monthly/', { params }),
   revenue: () => api.get('/reports/revenue/'),
+  financial: (params?: { from_date?: string; to_date?: string }) =>
+    api.get('/reports/financial/', { params }),
+  financialPdfUrl: (from_date: string, to_date: string) =>
+    `${BASE_URL}/reports/financial/pdf/?from_date=${from_date}&to_date=${to_date}`,
 }
 
 // ── Company Settings ──────────────────────────────────────────────────────────
@@ -287,3 +311,45 @@ export const activityApi = {
   list: (params?: Record<string, string>) => api.get('/activity/', { params }),
   summary: () => api.get('/activity/summary/'),
 }
+
+// ── Expenses ──────────────────────────────────────────────────────────────────
+export const expensesApi = {
+  list: (params?: Record<string, string>) => api.get('/expenses/', { params }),
+  get: (id: number) => api.get(`/expenses/${id}/`),
+  create: (data: Record<string, unknown>) => api.post('/expenses/', data),
+  update: (id: number, data: Record<string, unknown>) => api.patch(`/expenses/${id}/`, data),
+  delete: (id: number) => api.delete(`/expenses/${id}/`),
+  summary: (params?: Record<string, string>) => api.get('/expenses/summary/', { params }),
+  recurring: {
+    list: (params?: Record<string, string>) => api.get('/expenses/recurring/', { params }),
+    get: (id: number) => api.get(`/expenses/recurring/${id}/`),
+    create: (data: Record<string, unknown>) => api.post('/expenses/recurring/', data),
+    update: (id: number, data: Record<string, unknown>) => api.patch(`/expenses/recurring/${id}/`, data),
+    delete: (id: number) => api.delete(`/expenses/recurring/${id}/`),
+    markPaid: (id: number, data?: Record<string, unknown>) =>
+      api.post(`/expenses/recurring/${id}/mark-paid/`, data ?? {}),
+  },
+}
+
+// ── Purchases ─────────────────────────────────────────────────────────────────
+export const purchasesApi = {
+  suppliers: {
+    list: () => api.get('/purchases/suppliers/'),
+    create: (data: Record<string, unknown>) => api.post('/purchases/suppliers/', data),
+    update: (id: number, data: Record<string, unknown>) => api.patch(`/purchases/suppliers/${id}/`, data),
+    delete: (id: number) => api.delete(`/purchases/suppliers/${id}/`),
+  },
+  list: (params?: Record<string, string>) => api.get('/purchases/', { params }),
+  get: (id: number) => api.get(`/purchases/${id}/`),
+  create: (data: Record<string, unknown>) => api.post('/purchases/', data),
+  update: (id: number, data: Record<string, unknown>) => api.patch(`/purchases/${id}/`, data),
+  delete: (id: number) => api.delete(`/purchases/${id}/`),
+  addItem: (id: number, data: Record<string, unknown>) => api.post(`/purchases/${id}/items/`, data),
+  removeItem: (id: number, itemId: number) => api.delete(`/purchases/${id}/items/${itemId}/`),
+  receive: (id: number, data?: Record<string, unknown>) =>
+    api.post(`/purchases/${id}/receive/`, data ?? {}),
+}
+
+// ── Payment Receipt ───────────────────────────────────────────────────────────
+export const paymentReceiptUrl    = (id: number) => `${BASE_URL}/payments/${id}/receipt/`
+export const purchaseOrderPdfUrl  = (id: number) => `${BASE_URL}/purchases/${id}/pdf/`

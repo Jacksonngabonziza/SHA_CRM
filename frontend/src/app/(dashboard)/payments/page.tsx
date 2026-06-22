@@ -1,10 +1,10 @@
 'use client'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { paymentsApi, clientsApi, quotesApi, downloadCsv } from '@/lib/api'
+import { paymentsApi, clientsApi, quotesApi, ordersApi, downloadCsv, paymentReceiptUrl } from '@/lib/api'
 import { Payment, PaymentMethod, PaymentType } from '@/types'
 import { formatDate, cn } from '@/lib/utils'
-import { CreditCard, Loader2, Plus, X, Check, Clock, XCircle, Download } from 'lucide-react'
+import { CreditCard, Loader2, Plus, X, Check, Clock, XCircle, Download, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -33,6 +33,8 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'cheque', label: 'Cheque' },
 ]
 
+type QuoteRow = { id: number; ref_number: string; total_price_rwf: number; status_display: string; _label: string }
+
 function formatRWF(v: number) {
   return `RWF ${Number(v).toLocaleString()}`
 }
@@ -56,7 +58,10 @@ export default function PaymentsPage() {
       setShowForm(false)
       toast.success('Payment recorded')
     },
-    onError: () => toast.error('Failed to record payment'),
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      toast.error(detail || 'Failed to record payment')
+    },
   })
 
   const patchMutation = useMutation({
@@ -171,6 +176,13 @@ export default function PaymentsPage() {
                         </button>
                       )}
                       <button
+                        onClick={() => downloadCsv(paymentReceiptUrl(p.id), `Receipt-${p.id}.pdf`).catch(() => toast.error('Failed to download receipt'))}
+                        className="p-1.5 text-gray-400 hover:text-[#091928] rounded transition-colors"
+                        title="Download receipt"
+                      >
+                        <FileText size={14} />
+                      </button>
+                      <button
                         onClick={() => {
                           if (globalThis.confirm('Delete this payment?')) deleteMutation.mutate(p.id)
                         }}
@@ -223,13 +235,25 @@ function PaymentFormModal({
   })
   const clients = clientsData?.results ?? clientsData ?? []
 
-  // Fetch quotes for selected client
+  // Fetch installation quotes for selected client
   const { data: clientQuotesData, isLoading: quotesLoading } = useQuery({
     queryKey: ['client-quotes', clientId],
     queryFn: async () => (await quotesApi.list({ client: clientId })).data,
     enabled: !!clientId,
   })
-  const clientQuotes = clientQuotesData?.results ?? clientQuotesData ?? []
+  // Fetch product orders for selected client
+  const { data: clientOrdersData, isLoading: ordersLoading } = useQuery({
+    queryKey: ['client-orders-pay', clientId],
+    queryFn: async () => (await ordersApi.list({ client: clientId })).data,
+    enabled: !!clientId,
+  })
+
+  const installationQuotes: QuoteRow[] = (clientQuotesData?.results ?? clientQuotesData ?? [])
+    .map((q: QuoteRow) => ({ ...q, _label: 'Quote' }))
+  const productOrders: QuoteRow[] = (clientOrdersData?.results ?? clientOrdersData ?? [])
+    .map((o: QuoteRow) => ({ ...o, _label: 'Order' }))
+  const clientQuotes: QuoteRow[] = [...installationQuotes, ...productOrders]
+  const anyLoading = quotesLoading || ordersLoading
 
   // Fetch payment summary for selected quote to show balance
   const { data: summary } = useQuery({
@@ -309,15 +333,15 @@ function PaymentFormModal({
           {clientId && (
             <div>
               <label htmlFor="quote-select" className="label">Quote *</label>
-              {quotesLoading && (
+              {anyLoading && (
                 <div className="input flex items-center gap-2 text-gray-400 text-sm">
-                  <Loader2 size={14} className="animate-spin" /> Loading quotes…
+                  <Loader2 size={14} className="animate-spin" /> Loading…
                 </div>
               )}
-              {!quotesLoading && clientQuotes.length === 0 && (
-                <p className="text-sm text-gray-400 py-2">No quotes found for this client.</p>
+              {!anyLoading && clientQuotes.length === 0 && (
+                <p className="text-sm text-gray-400 py-2">No quotes or orders found for this client.</p>
               )}
-              {!quotesLoading && clientQuotes.length > 0 && (
+              {!anyLoading && clientQuotes.length > 0 && (
                 <select
                   id="quote-select"
                   value={quoteId}
@@ -325,10 +349,10 @@ function PaymentFormModal({
                   className="input"
                   required
                 >
-                  <option value="">— Select quote —</option>
-                  {clientQuotes.map((q: { id: number; ref_number: string; total_price_rwf: number; status_display: string }) => (
+                  <option value="">— Select quote or order —</option>
+                  {clientQuotes.map(q => (
                     <option key={q.id} value={q.id}>
-                      {q.ref_number} · {formatRWF(q.total_price_rwf)} · {q.status_display}
+                      [{q._label}] {q.ref_number} · {formatRWF(q.total_price_rwf)} · {q.status_display}
                     </option>
                   ))}
                 </select>

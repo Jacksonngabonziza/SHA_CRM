@@ -16,6 +16,8 @@ urlpatterns = [
     path('api/reports/',       include('apps.reports.urls')),
     path('api/referrals/',     include('apps.referrals.urls')),
     path('api/activity/',      include('apps.activity.urls')),
+    path('api/expenses/',      include('apps.expenses.urls')),
+    path('api/purchases/',     include('apps.purchases.urls')),
 ]
 
 # Serve media files via Django in development only.

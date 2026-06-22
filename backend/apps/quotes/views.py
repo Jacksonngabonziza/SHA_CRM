@@ -12,9 +12,13 @@ from .models import Quote, ClientFeedback
 from .serializers import (
     QuoteSerializer, QuoteListSerializer, QuoteCreateSerializer,
     CalculateRequestSerializer, ClientFeedbackSerializer,
+    ProductOrderCreateSerializer, OrderListSerializer,
 )
 from .engine import calculate_system
 from .pdf_generator import generate_quote_pdf
+
+NOT_FOUND = 'Not found.'
+PDF_CONTENT_TYPE = 'application/pdf'
 
 
 def _decrement_stock(quote):
@@ -46,6 +50,16 @@ def _decrement_stock(quote):
         )
 
 
+def _decrement_order_stock(quote):
+    """Decrement stock for product order line items when order is approved."""
+    from apps.products.models import Product
+    from django.db.models import F
+    for item in quote.line_items.filter(product__isnull=False):
+        Product.objects.filter(pk=item.product_id, stock_quantity__gt=0).update(
+            stock_quantity=F('stock_quantity') - item.quantity
+        )
+
+
 def _auto_expire(quote):
     """Silently expire a quote if its validity date has passed."""
     from django.utils import timezone
@@ -63,9 +77,9 @@ class QuoteListCreateView(generics.ListCreateAPIView):
     ordering           = ['-created_at']
 
     def get_queryset(self):
-        qs = Quote.objects.select_related(
+        qs = Quote.objects.filter(quote_type=Quote.TYPE_INSTALLATION).select_related(
             'client', 'panel', 'battery', 'inverter', 'generator', 'created_by'
-        ).prefetch_related('appliances', 'feedback', 'versions').all()
+        ).prefetch_related('appliances', 'feedback', 'versions')
         # Sales only sees own quotes
         if self.request.user.role == 'sales':
             qs = qs.filter(created_by=self.request.user)
@@ -102,9 +116,9 @@ class QuoteDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Response(QuoteSerializer(instance, context={'request': request}).data)
 
     def get_queryset(self):
-        qs = Quote.objects.select_related(
+        qs = Quote.objects.filter(quote_type=Quote.TYPE_INSTALLATION).select_related(
             'client', 'panel', 'battery', 'inverter', 'generator', 'created_by'
-        ).prefetch_related('appliances', 'feedback', 'versions').all()
+        ).prefetch_related('appliances', 'feedback', 'versions')
         if self.request.user.role == 'sales':
             qs = qs.filter(created_by=self.request.user)
         return qs
@@ -150,10 +164,10 @@ def quote_pdf(request, pk):
             qs = qs.filter(created_by=request.user)
         quote = qs.get(pk=pk)
     except Quote.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=404)
+        return Response({'detail': NOT_FOUND}, status=404)
 
     buf = generate_quote_pdf(quote)
-    response = HttpResponse(buf, content_type='application/pdf')
+    response = HttpResponse(buf, content_type=PDF_CONTENT_TYPE)
     response['Content-Disposition'] = f'inline; filename="Quote-{quote.ref_number}.pdf"'
     return response
 
@@ -168,7 +182,7 @@ def email_quote(request, pk):
             qs = qs.filter(created_by=request.user)
         quote = qs.get(pk=pk)
     except Quote.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=404)
+        return Response({'detail': NOT_FOUND}, status=404)
 
     client = quote.client
     recipient = request.data.get('email') or client.email
@@ -209,7 +223,7 @@ For any questions, please contact us:
             to=[recipient],
             reply_to=[django_settings.EMAIL_HOST_USER],
         )
-        email.attach(f"Quote-{quote.ref_number}.pdf", pdf_buf.read(), 'application/pdf')
+        email.attach(f"Quote-{quote.ref_number}.pdf", pdf_buf.read(), PDF_CONTENT_TYPE)
         email.send(fail_silently=False)
 
         # Update quote status
@@ -233,7 +247,7 @@ def whatsapp_share(request, pk):
             qs = qs.filter(created_by=request.user)
         quote = qs.get(pk=pk)
     except Quote.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=404)
+        return Response({'detail': NOT_FOUND}, status=404)
 
     share_url = f"{django_settings.FRONTEND_URL}/quote/{quote.share_token}"
     client = quote.client
@@ -271,7 +285,7 @@ def create_quote_version(request, pk):
     try:
         original = Quote.objects.prefetch_related('appliances').get(pk=pk)
     except Quote.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=404)
+        return Response({'detail': NOT_FOUND}, status=404)
 
     from .models import Appliance
     import uuid
@@ -302,7 +316,7 @@ def update_quote_status(request, pk):
             qs = qs.filter(created_by=request.user)
         quote = qs.get(pk=pk)
     except Quote.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=404)
+        return Response({'detail': NOT_FOUND}, status=404)
 
     new_status = request.data.get('status')
     if new_status not in dict(Quote.STATUS_CHOICES):
@@ -313,7 +327,10 @@ def update_quote_status(request, pk):
     quote.save()
 
     if new_status == 'approved' and old_status != 'approved':
-        _decrement_stock(quote)
+        if quote.quote_type == Quote.TYPE_PRODUCT_ORDER:
+            _decrement_order_stock(quote)
+        else:
+            _decrement_stock(quote)
 
     return Response(QuoteSerializer(quote, context={'request': request}).data)
 
@@ -326,7 +343,7 @@ def shared_quote(request, token):
             'client', 'panel', 'battery', 'inverter', 'generator'
         ).prefetch_related('appliances', 'feedback').get(share_token=token)
     except Quote.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=404)
+        return Response({'detail': NOT_FOUND}, status=404)
     return Response(QuoteSerializer(quote, context={'request': request}).data)
 
 
@@ -336,7 +353,7 @@ def submit_feedback(request, token):
     try:
         quote = Quote.objects.select_related('client', 'created_by').get(share_token=token)
     except Quote.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=404)
+        return Response({'detail': NOT_FOUND}, status=404)
 
     # Don't accept feedback on quotes that are already closed or expired
     if quote.status in ('approved', 'rejected', 'expired'):
@@ -380,7 +397,12 @@ def _notify_rep_of_feedback(quote, feedback):
         return
 
     cfg = CompanySettings.get()
-    action = 'APPROVED' if feedback.status == 'approved' else 'REJECTED' if feedback.status == 'rejected' else 'commented on'
+    if feedback.status == 'approved':
+        action = 'APPROVED'
+    elif feedback.status == 'rejected':
+        action = 'REJECTED'
+    else:
+        action = 'commented on'
     subject = f'[{cfg.company_name}] Client {action} Quote {quote.ref_number}'
 
     body = (
@@ -412,13 +434,34 @@ def _notify_rep_of_feedback(quote, feedback):
         pass  # Never let notification failure break the feedback submission
 
 
+def _quote_csv_row(q):
+    return [
+        q.ref_number,
+        q.client.name if q.client else '',
+        q.client.phone if q.client else '',
+        q.get_status_display(),
+        q.system_size_kwp,
+        q.num_panels,
+        f'{q.panel.brand} {q.panel.model}' if q.panel else '',
+        f'{q.battery.brand} {q.battery.model}' if q.battery else '',
+        f'{q.inverter.brand} {q.inverter.model}' if q.inverter else '',
+        f'{q.generator.brand} {q.generator.model}' if q.generator else '',
+        float(q.total_price_rwf),
+        float(q.annual_savings_rwf),
+        float(q.payback_years),
+        q.valid_until or '',
+        q.created_by.get_full_name() if q.created_by else '',
+        q.created_at.strftime('%Y-%m-%d'),
+    ]
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def export_quotes_csv(request):
     import csv
     from django.http import HttpResponse
 
-    qs = Quote.objects.select_related(
+    qs = Quote.objects.filter(quote_type=Quote.TYPE_INSTALLATION).select_related(
         'client', 'panel', 'battery', 'inverter', 'generator', 'created_by'
     ).order_by('-created_at')
     if request.user.role == 'sales':
@@ -426,7 +469,6 @@ def export_quotes_csv(request):
 
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="quotes.csv"'
-
     writer = csv.writer(response)
     writer.writerow([
         'Ref', 'Client', 'Phone', 'Status', 'System Size (kWp)',
@@ -435,22 +477,395 @@ def export_quotes_csv(request):
         'Valid Until', 'Created By', 'Created At',
     ])
     for q in qs:
-        writer.writerow([
-            q.ref_number,
-            q.client.name if q.client else '',
-            q.client.phone if q.client else '',
-            q.get_status_display(),
-            q.system_size_kwp,
-            q.num_panels,
-            f'{q.panel.brand} {q.panel.model}' if q.panel else '',
-            f'{q.battery.brand} {q.battery.model}' if q.battery else '',
-            f'{q.inverter.brand} {q.inverter.model}' if q.inverter else '',
-            f'{q.generator.brand} {q.generator.model}' if q.generator else '',
-            float(q.total_price_rwf),
-            float(q.annual_savings_rwf),
-            float(q.payback_years),
-            q.valid_until or '',
-            q.created_by.get_full_name() if q.created_by else '',
-            q.created_at.strftime('%Y-%m-%d'),
-        ])
+        writer.writerow(_quote_csv_row(q))
     return response
+
+
+class ProductOrderListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields   = ['status', 'client']
+    search_fields      = ['ref_number', 'client__name', 'client__phone']
+    ordering_fields    = ['created_at', 'total_price_rwf']
+    ordering           = ['-created_at']
+
+    def get_queryset(self):
+        qs = Quote.objects.filter(quote_type=Quote.TYPE_PRODUCT_ORDER).select_related(
+            'client', 'created_by'
+        ).prefetch_related('line_items__product')
+        if self.request.user.role == 'sales':
+            qs = qs.filter(created_by=self.request.user)
+        return qs
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return ProductOrderCreateSerializer
+        return OrderListSerializer
+
+
+class ProductOrderDetailView(generics.RetrieveUpdateAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method in ('PUT', 'PATCH'):
+            return ProductOrderCreateSerializer
+        return QuoteSerializer
+
+    def get_queryset(self):
+        qs = Quote.objects.filter(quote_type=Quote.TYPE_PRODUCT_ORDER).select_related(
+            'client', 'created_by'
+        ).prefetch_related('line_items__product')
+        if self.request.user.role == 'sales':
+            qs = qs.filter(created_by=self.request.user)
+        return qs
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(QuoteSerializer(instance, context={'request': request}).data)
+
+
+def _build_order_pdf(quote):
+    """Generate a professional product order PDF with logo and brand design."""
+    import os
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph,
+        Spacer, HRFlowable, Image,
+    )
+    from reportlab.lib.styles import ParagraphStyle
+    from apps.accounts.models import CompanySettings
+    from django.conf import settings as django_settings
+
+    cfg = CompanySettings.get()
+    buf = BytesIO()
+    W, _ = A4
+
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        topMargin=12*mm, bottomMargin=15*mm,
+        leftMargin=15*mm, rightMargin=15*mm,
+        title=f"Order {quote.ref_number}",
+    )
+    CW = W - 30*mm
+
+    NAVY  = colors.HexColor('#091928')
+    GOLD  = colors.HexColor('#EA9D13')
+    GREEN = colors.HexColor('#71AA1F')
+    LGREY = colors.HexColor('#F5F5F5')
+    DGREY = colors.HexColor('#64748B')
+    WHITE = colors.white
+
+    def ps(name, **kw):
+        return ParagraphStyle(name, fontName='Helvetica', **kw)
+
+    story = []
+
+    # ── HEADER ────────────────────────────────────────────────────────────────
+    logo_path = os.path.join(django_settings.MEDIA_ROOT, 'products', 'logo_sha.png')
+    if os.path.exists(logo_path):
+        logo_cell = Image(logo_path, width=38*mm, height=13*mm, kind='proportional')
+    else:
+        logo_cell = Paragraph(
+            f'<b><font color="#091928" size="18">{cfg.company_name}</font></b>',
+            ps('LogoFallback', fontSize=18)
+        )
+
+    contact_para = Paragraph(
+        f'<font color="#64748B"><i>{cfg.company_tagline}</i></font><br/>'
+        f'<font color="#091928">{cfg.company_phone}</font><br/>'
+        f'<font color="#091928">{cfg.company_email}</font>'
+        + (f'<br/><font color="#091928">{cfg.company_website}</font>' if cfg.company_website else ''),
+        ps('Contact', fontSize=8, leading=12, alignment=TA_RIGHT)
+    )
+
+    header_tbl = Table([[logo_cell, contact_para]], colWidths=[CW * 0.5, CW * 0.5])
+    header_tbl.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(header_tbl)
+    story.append(HRFlowable(width='100%', thickness=3, color=GOLD, spaceAfter=2))
+    story.append(HRFlowable(width='100%', thickness=1.5, color=GREEN, spaceAfter=10))
+
+    # ── TITLE + REF ───────────────────────────────────────────────────────────
+    story.append(Paragraph(
+        '<b>PRODUCT ORDER</b>',
+        ps('Title', fontSize=16, textColor=NAVY, alignment=TA_CENTER, spaceAfter=2)
+    ))
+    story.append(Paragraph(
+        f'Reference: <b>{quote.ref_number}</b> &nbsp;|&nbsp; '
+        f'Date: <b>{quote.created_at.strftime("%d %B %Y")}</b> &nbsp;|&nbsp; '
+        f'Valid Until: <b>{quote.valid_until.strftime("%d %B %Y") if quote.valid_until else "N/A"}</b>',
+        ps('Ref', fontSize=9, textColor=DGREY, alignment=TA_CENTER, spaceAfter=12)
+    ))
+
+    # ── BILL TO / ORDER INFO ───────────────────────────────────────────────────
+    client = quote.client
+    client_lines = f'<b>{client.name}</b><br/>'
+    if client.phone:   client_lines += f'{client.phone}<br/>'
+    if client.email:   client_lines += f'{client.email}<br/>'
+    if client.location: client_lines += f'{client.location}'
+
+    status_color = {'draft': '#6B7280', 'sent': '#2563EB', 'approved': '#16A34A',
+                    'rejected': '#DC2626', 'expired': '#9CA3AF'}.get(quote.status, '#6B7280')
+
+    info_data = [[
+        Paragraph(
+            f'<font color="#64748B" size="8">BILL TO</font><br/>'
+            f'<font color="#091928">{client_lines}</font>',
+            ps('BillTo', fontSize=9, leading=14)
+        ),
+        Paragraph(
+            f'<font color="#64748B" size="8">ORDER STATUS</font><br/>'
+            f'<font color="{status_color}"><b>{quote.get_status_display().upper()}</b></font>',
+            ps('Status', fontSize=10, leading=14, alignment=TA_RIGHT)
+        ),
+    ]]
+    info_tbl = Table(info_data, colWidths=[CW * 0.6, CW * 0.4])
+    info_tbl.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BACKGROUND', (0, 0), (-1, -1), LGREY),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (0, -1), 10),
+        ('RIGHTPADDING', (-1, 0), (-1, -1), 10),
+        ('ROUNDEDCORNERS', [4, 4, 4, 4]),
+    ]))
+    story.append(info_tbl)
+    story.append(Spacer(1, 8*mm))
+
+    # ── LINE ITEMS TABLE ──────────────────────────────────────────────────────
+    header_row = [
+        Paragraph('<font color="white"><b>#</b></font>', ps('TH', fontSize=9, alignment=TA_CENTER)),
+        Paragraph('<font color="white"><b>Description</b></font>', ps('TH2', fontSize=9)),
+        Paragraph('<font color="white"><b>Qty</b></font>', ps('TH3', fontSize=9, alignment=TA_RIGHT)),
+        Paragraph('<font color="white"><b>Unit Price (RWF)</b></font>', ps('TH4', fontSize=9, alignment=TA_RIGHT)),
+        Paragraph('<font color="white"><b>Total (RWF)</b></font>', ps('TH5', fontSize=9, alignment=TA_RIGHT)),
+    ]
+    rows = [header_row]
+    for i, item in enumerate(quote.line_items.all(), 1):
+        bg = WHITE if i % 2 == 1 else LGREY
+        rows.append([
+            Paragraph(str(i), ps(f'N{i}', fontSize=9, textColor=DGREY, alignment=TA_CENTER)),
+            Paragraph(item.description, ps(f'D{i}', fontSize=9, textColor=NAVY)),
+            Paragraph(str(item.quantity), ps(f'Q{i}', fontSize=9, alignment=TA_RIGHT)),
+            Paragraph(f'{float(item.unit_price):,.0f}', ps(f'UP{i}', fontSize=9, alignment=TA_RIGHT)),
+            Paragraph(f'<b>{float(item.total):,.0f}</b>', ps(f'T{i}', fontSize=9, alignment=TA_RIGHT, textColor=NAVY)),
+        ])
+
+    # Subtotal / total row
+    rows.append([
+        '', '', '',
+        Paragraph('<b>ORDER TOTAL</b>', ps('TotL', fontSize=10, textColor=NAVY, alignment=TA_RIGHT)),
+        Paragraph(f'<b>RWF {float(quote.total_price_rwf):,.0f}</b>',
+                  ps('TotV', fontSize=11, textColor=GOLD, alignment=TA_RIGHT)),
+    ])
+
+    items_tbl = Table(rows, colWidths=[10*mm, 85*mm, 15*mm, 35*mm, 35*mm], repeatRows=1)
+    items_tbl.setStyle(TableStyle([
+        # Header
+        ('BACKGROUND',    (0, 0),  (-1, 0),  NAVY),
+        ('ROWBACKGROUNDS',(0, 1),  (-1, -2), [WHITE, LGREY]),
+        # Total row
+        ('BACKGROUND',    (0, -1), (-1, -1), colors.HexColor('#FEF3C7')),
+        ('LINEABOVE',     (0, -1), (-1, -1), 1.5, GOLD),
+        # Grid
+        ('GRID',          (0, 0),  (-1, -2), 0.3, colors.HexColor('#E5E7EB')),
+        ('LINEBELOW',     (0, 0),  (-1, 0),  0,   NAVY),
+        # Padding
+        ('TOPPADDING',    (0, 0),  (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0),  (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0),  (-1, -1), 6),
+        ('RIGHTPADDING',  (0, 0),  (-1, -1), 6),
+        ('VALIGN',        (0, 0),  (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(items_tbl)
+
+    # ── NOTES ─────────────────────────────────────────────────────────────────
+    if quote.notes:
+        story.append(Spacer(1, 8*mm))
+        notes_tbl = Table([[
+            Paragraph(
+                f'<font color="#64748B" size="8">NOTES</font><br/>'
+                f'<font color="#091928" size="9">{quote.notes}</font>',
+                ps('Notes', fontSize=9, leading=14)
+            )
+        ]], colWidths=[CW])
+        notes_tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), LGREY),
+            ('TOPPADDING',    (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ]))
+        story.append(notes_tbl)
+
+    # ── PAYMENT TERMS ─────────────────────────────────────────────────────────
+    if cfg.payment_instructions:
+        story.append(Spacer(1, 6*mm))
+        story.append(Paragraph(
+            f'<font color="#64748B" size="8">PAYMENT INSTRUCTIONS</font><br/>'
+            f'<font color="#091928" size="9">{cfg.payment_instructions}</font>',
+            ps('PayInfo', fontSize=9, leading=14)
+        ))
+
+    # ── FOOTER ────────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 14*mm))
+    footer_tbl = Table([[
+        Paragraph(
+            f'<font color="white" size="9"><b>{cfg.company_name}</b></font><br/>'
+            f'<font color="#EA9D13" size="8">{cfg.company_tagline}</font>',
+            ps('FL', fontSize=9, leading=14, alignment=TA_LEFT)
+        ),
+        Paragraph(
+            f'<font color="white" size="8">{cfg.company_phone} &nbsp;·&nbsp; {cfg.company_email}</font>',
+            ps('FR', fontSize=8, leading=12, alignment=TA_RIGHT)
+        ),
+    ]], colWidths=[CW * 0.6, CW * 0.4])
+    footer_tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), NAVY),
+        ('TOPPADDING',    (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING',   (0, 0), (0, -1),  12),
+        ('RIGHTPADDING',  (-1, 0), (-1, -1), 12),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(footer_tbl)
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def product_order_pdf(request, pk):
+    try:
+        quote = Quote.objects.select_related('client', 'created_by').prefetch_related(
+            'line_items__product'
+        ).get(pk=pk, quote_type=Quote.TYPE_PRODUCT_ORDER)
+    except Quote.DoesNotExist:
+        return Response({'detail': NOT_FOUND}, status=404)
+
+    buf = _build_order_pdf(quote)
+    response = HttpResponse(buf, content_type=PDF_CONTENT_TYPE)
+    response['Content-Disposition'] = f'inline; filename="Order-{quote.ref_number}.pdf"'
+    return response
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def email_order(request, pk):
+    try:
+        quote = Quote.objects.filter(quote_type=Quote.TYPE_PRODUCT_ORDER).select_related(
+            'client', 'created_by'
+        ).prefetch_related('line_items').get(pk=pk)
+    except Quote.DoesNotExist:
+        return Response({'detail': NOT_FOUND}, status=404)
+
+    client = quote.client
+    recipient = request.data.get('email') or client.email
+    if not recipient:
+        return Response({'detail': 'No email address for this client.'}, status=400)
+
+    try:
+        from apps.accounts.models import CompanySettings
+        cfg = CompanySettings.get()
+
+        items = list(quote.line_items.all())
+        items_lines = '\n'.join(
+            f"  • {i.quantity}× {i.description}  —  RWF {float(i.unit_price):,.0f}"
+            for i in items
+        )
+        body = (
+            f"Dear {client.name},\n\n"
+            f"Please find attached your product order from {cfg.company_name}.\n\n"
+            f"Order Reference: {quote.ref_number}\n"
+            f"Items:\n{items_lines}\n"
+            f"{'─' * 45}\n"
+            f"Total: RWF {float(quote.total_price_rwf):,.0f}\n"
+            f"Valid Until: {quote.valid_until.strftime('%d %B %Y') if quote.valid_until else 'N/A'}\n\n"
+            f"For any questions, please contact us:\n"
+            f"📞 {cfg.company_phone}\n"
+            f"📧 {cfg.company_email}\n\n"
+            f"{cfg.company_tagline}\n{cfg.company_name}\n"
+        )
+
+        buf = _build_order_pdf(quote)
+        email_msg = EmailMessage(
+            subject=f"Product Order — {quote.ref_number} | {cfg.company_name}",
+            body=body,
+            from_email=f"{cfg.company_name} <{django_settings.EMAIL_HOST_USER}>",
+            to=[recipient],
+            reply_to=[django_settings.EMAIL_HOST_USER],
+        )
+        email_msg.attach(f"Order-{quote.ref_number}.pdf", buf.read(), PDF_CONTENT_TYPE)
+        email_msg.send(fail_silently=False)
+
+        if quote.status == 'draft':
+            quote.status = 'sent'
+            quote.save()
+
+        return Response({'detail': f'Order emailed to {recipient}'})
+    except Exception as e:
+        return Response({'detail': f'Email failed: {str(e)}'}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def order_whatsapp(request, pk):
+    try:
+        quote = Quote.objects.filter(quote_type=Quote.TYPE_PRODUCT_ORDER).select_related(
+            'client'
+        ).prefetch_related('line_items').get(pk=pk)
+    except Quote.DoesNotExist:
+        return Response({'detail': NOT_FOUND}, status=404)
+
+    client = quote.client
+    from apps.accounts.models import CompanySettings
+    cfg = CompanySettings.get()
+
+    items = list(quote.line_items.all()[:4])
+    items_text = '\n'.join(f"  • {i.quantity}× {i.description}" for i in items)
+    if quote.line_items.count() > 4:
+        items_text += '\n  • ...'
+
+    message = (
+        f"Hello {client.name}! 🛍️\n\n"
+        f"Your product order from *{cfg.company_name}* is ready.\n\n"
+        f"📋 *Order:* {quote.ref_number}\n"
+        f"📦 *Items:*\n{items_text}\n\n"
+        f"💰 *Total:* RWF {float(quote.total_price_rwf):,.0f}\n"
+        f"📅 *Valid until:* {quote.valid_until.strftime('%d %B %Y') if quote.valid_until else 'N/A'}\n\n"
+        f"_{cfg.company_tagline}_ 🌍"
+    )
+
+    import urllib.parse
+    phone = client.phone.replace('+', '').replace(' ', '').replace('-', '')
+    wa_url = f"https://wa.me/{phone}?text={urllib.parse.quote(message)}"
+
+    if quote.status == 'draft':
+        quote.status = 'sent'
+        quote.save()
+
+    return Response({'whatsapp_url': wa_url, 'message': message, 'phone': phone})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def shared_order(request, token):
+    """Public endpoint — returns product order data for the client-facing share page."""
+    try:
+        quote = Quote.objects.select_related('client', 'created_by').prefetch_related(
+            'line_items__product'
+        ).get(share_token=token, quote_type=Quote.TYPE_PRODUCT_ORDER)
+    except Quote.DoesNotExist:
+        return Response({'detail': NOT_FOUND}, status=404)
+    return Response(QuoteSerializer(quote, context={'request': request}).data)
