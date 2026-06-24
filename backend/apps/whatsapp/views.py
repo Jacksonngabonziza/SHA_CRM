@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
 from django.utils import timezone
@@ -82,7 +83,7 @@ def _process_messages(value: dict):
         if not created and not conv.display_name and contacts.get(wa_id):
             conv.display_name = contacts[wa_id]
 
-        msg_ts = timezone.datetime.fromtimestamp(ts, tz=timezone.utc) if ts else timezone.now()
+        msg_ts = datetime.fromtimestamp(ts, tz=dt_timezone.utc) if ts else timezone.now()
 
         # Save incoming message
         WAMessage.objects.create(
