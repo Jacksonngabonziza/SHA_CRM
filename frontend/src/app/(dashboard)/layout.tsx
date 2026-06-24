@@ -227,7 +227,7 @@ export default function DashboardLayout({ children }: { readonly children: React
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-6">
+        <main className={`flex-1 min-h-0 ${pathname.startsWith('/whatsapp') ? 'overflow-hidden' : 'overflow-y-auto p-3 sm:p-6'}`}>
           {children}
         </main>
       </div>
