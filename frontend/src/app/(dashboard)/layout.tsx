@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Users, FileText, Package,
   LogOut, Bell, ChevronRight, Menu, X,
   Wrench, CreditCard, BarChart2, ClipboardList, Share2, Settings, ShieldCheck, UserCheck, Activity, ShoppingCart,
-  Receipt, ShoppingBag,
+  Receipt, ShoppingBag, MessageCircle,
 } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
@@ -38,6 +38,7 @@ const NAV: NavItem[] = [
   { href: '/purchases',     label: 'Purchases',      icon: ShoppingBag,     permKey: 'purchases' },
   { href: '/surveys',       label: 'Surveys',        icon: ClipboardList,   permKey: 'surveys' },
   { href: '/referrals',     label: 'Referrals',      icon: Share2,          permKey: 'referrals' },
+  { href: '/whatsapp',      label: 'WhatsApp Inbox', icon: MessageCircle,   permKey: 'whatsapp' },
   { href: '/agents',        label: 'Field Agents',   icon: UserCheck,       adminLocked: true },
   { href: '/users',         label: 'Users',          icon: Users,           adminLocked: true },
   { href: '/reports',       label: 'Reports',        icon: BarChart2,       adminLocked: true },
@@ -47,7 +48,7 @@ const NAV: NavItem[] = [
 
 const DEFAULT_SALES_PERMS = [
   'clients', 'quotes', 'orders', 'products', 'installations',
-  'warranty', 'payments', 'surveys', 'referrals', 'settings',
+  'warranty', 'payments', 'surveys', 'referrals', 'whatsapp', 'settings',
 ]
 
 export default function DashboardLayout({ children }: { readonly children: React.ReactNode }) {

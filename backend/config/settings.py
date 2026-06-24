@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'apps.activity.apps.ActivityConfig',
     'apps.expenses.apps.ExpensesConfig',
     'apps.purchases.apps.PurchasesConfig',
+    'apps.whatsapp.apps.WhatsAppConfig',
 ]
 
 MIDDLEWARE = [
@@ -158,5 +159,12 @@ DEFAULT_FROM_EMAIL = os.getenv('GMAIL_USER', 'noreply@solarhopeafrica.com')
 
 # ── App config ────────────────────────────────────────────────────────────────
 FRONTEND_URL              = os.getenv('FRONTEND_URL', 'http://localhost:3000')
-WHATSAPP_BUSINESS_NUMBER  = os.getenv('WHATSAPP_BUSINESS_NUMBER', '+250780348624')
 LOW_STOCK_THRESHOLD       = int(os.getenv('LOW_STOCK_THRESHOLD', '2'))
+
+# ── WhatsApp Cloud API ────────────────────────────────────────────────────────
+WHATSAPP_ACCESS_TOKEN        = os.getenv('WHATSAPP_ACCESS_TOKEN', '')
+WHATSAPP_PHONE_NUMBER_ID     = os.getenv('WHATSAPP_PHONE_NUMBER_ID', '')
+WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv('WHATSAPP_BUSINESS_ACCOUNT_ID', '')
+WHATSAPP_VERIFY_TOKEN        = os.getenv('WHATSAPP_VERIFY_TOKEN', 'sha_crm_2026')
+WHATSAPP_APP_SECRET          = os.getenv('WHATSAPP_APP_SECRET', '')
+WHATSAPP_BUSINESS_NUMBER     = os.getenv('WHATSAPP_BUSINESS_NUMBER', '+250780348624')

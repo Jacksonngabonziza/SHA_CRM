@@ -350,6 +350,15 @@ export const purchasesApi = {
     api.post(`/purchases/${id}/receive/`, data ?? {}),
 }
 
+// ── WhatsApp CRM ──────────────────────────────────────────────────────────────
+export const whatsappApi = {
+  conversations: (params?: Record<string, string>) => api.get('/whatsapp/conversations/', { params }),
+  get: (id: number) => api.get(`/whatsapp/conversations/${id}/`),
+  update: (id: number, data: Record<string, unknown>) => api.patch(`/whatsapp/conversations/${id}/`, data),
+  send: (id: number, message: string) => api.post(`/whatsapp/conversations/${id}/send/`, { message }),
+  transfer: (id: number) => api.post(`/whatsapp/conversations/${id}/transfer/`),
+}
+
 // ── Payment Receipt ───────────────────────────────────────────────────────────
 export const paymentReceiptUrl    = (id: number) => `${BASE_URL}/payments/${id}/receipt/`
 export const purchaseOrderPdfUrl  = (id: number) => `${BASE_URL}/purchases/${id}/pdf/`

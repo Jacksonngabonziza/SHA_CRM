@@ -18,6 +18,7 @@ urlpatterns = [
     path('api/activity/',      include('apps.activity.urls')),
     path('api/expenses/',      include('apps.expenses.urls')),
     path('api/purchases/',     include('apps.purchases.urls')),
+    path('api/whatsapp/',      include('apps.whatsapp.urls')),
 ]
 
 # Serve media files via Django in development only.

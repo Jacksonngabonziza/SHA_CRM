@@ -725,6 +725,47 @@ export interface FinancialReport {
   monthly_trend: FinancialMonthTrend[]
 }
 
+// ── WhatsApp CRM ──────────────────────────────────────────────────────────────
+export type WAStatus = 'bot' | 'human' | 'transferred' | 'resolved'
+export type WALang = 'en' | 'rw' | 'fr'
+export type WADirection = 'inbound' | 'outbound'
+export type WAMsgStatus = 'sent' | 'delivered' | 'read' | 'failed'
+export type WAMsgType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'other'
+
+export interface WAMessage {
+  id: number
+  wa_message_id: string | null
+  direction: WADirection
+  message_type: WAMsgType
+  body: string
+  sent_by: number | null
+  sent_by_name: string | null
+  status: WAMsgStatus
+  timestamp: string
+}
+
+export interface WAConversation {
+  id: number
+  wa_id: string
+  display_name: string
+  status: WAStatus
+  language: WALang
+  bot_step: number
+  unread_count: number
+  last_message_at: string | null
+  created_at: string
+  client: number | null
+  client_name: string | null
+  assigned_to: number | null
+  assigned_to_name: string | null
+  last_message_preview: string
+}
+
+export interface WAConversationDetail extends WAConversation {
+  messages: WAMessage[]
+  bot_data: Record<string, unknown>
+}
+
 // ── Pagination ────────────────────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   count: number

@@ -529,139 +529,90 @@ class ProductOrderDetailView(generics.RetrieveUpdateAPIView):
 
 
 def _build_order_pdf(quote):
-    """Generate a professional product order PDF with logo and brand design."""
-    import os
+    """Generate a product order PDF using the official SHA letterhead."""
     from io import BytesIO
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
+    from reportlab.lib.colors import HexColor
     from reportlab.lib.units import mm
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-    from reportlab.platypus import (
-        SimpleDocTemplate, Table, TableStyle, Paragraph,
-        Spacer, HRFlowable, Image,
-    )
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import ParagraphStyle
     from apps.accounts.models import CompanySettings
-    from django.conf import settings as django_settings
+    from apps.accounts.letterhead import build_pdf, NAVY, GOLD, LGREY, DGREY, WHITE
 
     cfg = CompanySettings.get()
     buf = BytesIO()
     W, _ = A4
-
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        topMargin=12*mm, bottomMargin=15*mm,
-        leftMargin=15*mm, rightMargin=15*mm,
-        title=f"Order {quote.ref_number}",
-    )
-    CW = W - 30*mm
-
-    NAVY  = colors.HexColor('#091928')
-    GOLD  = colors.HexColor('#EA9D13')
-    GREEN = colors.HexColor('#71AA1F')
-    LGREY = colors.HexColor('#F5F5F5')
-    DGREY = colors.HexColor('#64748B')
-    WHITE = colors.white
+    CW = W - 30 * mm
 
     def ps(name, **kw):
         return ParagraphStyle(name, fontName='Helvetica', **kw)
 
     story = []
 
-    # ── HEADER ────────────────────────────────────────────────────────────────
-    logo_path = os.path.join(django_settings.MEDIA_ROOT, 'products', 'logo_sha.png')
-    if os.path.exists(logo_path):
-        logo_cell = Image(logo_path, width=38*mm, height=13*mm, kind='proportional')
-    else:
-        logo_cell = Paragraph(
-            f'<b><font color="#091928" size="18">{cfg.company_name}</font></b>',
-            ps('LogoFallback', fontSize=18)
-        )
-
-    contact_para = Paragraph(
-        f'<font color="#64748B"><i>{cfg.company_tagline}</i></font><br/>'
-        f'<font color="#091928">{cfg.company_phone}</font><br/>'
-        f'<font color="#091928">{cfg.company_email}</font>'
-        + (f'<br/><font color="#091928">{cfg.company_website}</font>' if cfg.company_website else ''),
-        ps('Contact', fontSize=8, leading=12, alignment=TA_RIGHT)
-    )
-
-    header_tbl = Table([[logo_cell, contact_para]], colWidths=[CW * 0.5, CW * 0.5])
-    header_tbl.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-    ]))
-    story.append(header_tbl)
-    story.append(HRFlowable(width='100%', thickness=3, color=GOLD, spaceAfter=2))
-    story.append(HRFlowable(width='100%', thickness=1.5, color=GREEN, spaceAfter=10))
-
-    # ── TITLE + REF ───────────────────────────────────────────────────────────
+    # ── DOCUMENT TITLE ────────────────────────────────────────────────────────
     story.append(Paragraph(
         '<b>PRODUCT ORDER</b>',
-        ps('Title', fontSize=16, textColor=NAVY, alignment=TA_CENTER, spaceAfter=2)
+        ps('Title', fontSize=16, textColor=NAVY, alignment=TA_CENTER, spaceAfter=2),
     ))
     story.append(Paragraph(
         f'Reference: <b>{quote.ref_number}</b> &nbsp;|&nbsp; '
         f'Date: <b>{quote.created_at.strftime("%d %B %Y")}</b> &nbsp;|&nbsp; '
         f'Valid Until: <b>{quote.valid_until.strftime("%d %B %Y") if quote.valid_until else "N/A"}</b>',
-        ps('Ref', fontSize=9, textColor=DGREY, alignment=TA_CENTER, spaceAfter=12)
+        ps('Ref', fontSize=9, textColor=DGREY, alignment=TA_CENTER, spaceAfter=12),
     ))
 
-    # ── BILL TO / ORDER INFO ───────────────────────────────────────────────────
+    # ── BILL TO / STATUS ──────────────────────────────────────────────────────
     client = quote.client
     client_lines = f'<b>{client.name}</b><br/>'
-    if client.phone:   client_lines += f'{client.phone}<br/>'
-    if client.email:   client_lines += f'{client.email}<br/>'
-    if client.location: client_lines += f'{client.location}'
+    if client.phone:    client_lines += f'{client.phone}<br/>'
+    if client.email:    client_lines += f'{client.email}<br/>'
+    if client.location: client_lines += client.location
 
-    status_color = {'draft': '#6B7280', 'sent': '#2563EB', 'approved': '#16A34A',
-                    'rejected': '#DC2626', 'expired': '#9CA3AF'}.get(quote.status, '#6B7280')
+    status_color = {
+        'draft': '#6B7280', 'sent': '#2563EB', 'approved': '#16A34A',
+        'rejected': '#DC2626', 'expired': '#9CA3AF',
+    }.get(quote.status, '#6B7280')
 
-    info_data = [[
+    info_tbl = Table([[
         Paragraph(
             f'<font color="#64748B" size="8">BILL TO</font><br/>'
             f'<font color="#091928">{client_lines}</font>',
-            ps('BillTo', fontSize=9, leading=14)
+            ps('BillTo', fontSize=9, leading=14),
         ),
         Paragraph(
             f'<font color="#64748B" size="8">ORDER STATUS</font><br/>'
             f'<font color="{status_color}"><b>{quote.get_status_display().upper()}</b></font>',
-            ps('Status', fontSize=10, leading=14, alignment=TA_RIGHT)
+            ps('Status', fontSize=10, leading=14, alignment=TA_RIGHT),
         ),
-    ]]
-    info_tbl = Table(info_data, colWidths=[CW * 0.6, CW * 0.4])
+    ]], colWidths=[CW * 0.6, CW * 0.4])
     info_tbl.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BACKGROUND', (0, 0), (-1, -1), LGREY),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+        ('BACKGROUND',    (0, 0), (-1, -1), LGREY),
+        ('TOPPADDING',    (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('LEFTPADDING', (0, 0), (0, -1), 10),
-        ('RIGHTPADDING', (-1, 0), (-1, -1), 10),
-        ('ROUNDEDCORNERS', [4, 4, 4, 4]),
+        ('LEFTPADDING',   (0, 0), (0,  -1), 10),
+        ('RIGHTPADDING',  (-1, 0), (-1, -1), 10),
     ]))
     story.append(info_tbl)
-    story.append(Spacer(1, 8*mm))
+    story.append(Spacer(1, 8 * mm))
 
-    # ── LINE ITEMS TABLE ──────────────────────────────────────────────────────
-    header_row = [
-        Paragraph('<font color="white"><b>#</b></font>', ps('TH', fontSize=9, alignment=TA_CENTER)),
-        Paragraph('<font color="white"><b>Description</b></font>', ps('TH2', fontSize=9)),
-        Paragraph('<font color="white"><b>Qty</b></font>', ps('TH3', fontSize=9, alignment=TA_RIGHT)),
-        Paragraph('<font color="white"><b>Unit Price (RWF)</b></font>', ps('TH4', fontSize=9, alignment=TA_RIGHT)),
-        Paragraph('<font color="white"><b>Total (RWF)</b></font>', ps('TH5', fontSize=9, alignment=TA_RIGHT)),
-    ]
-    rows = [header_row]
+    # ── LINE ITEMS ────────────────────────────────────────────────────────────
+    rows = [[
+        Paragraph('<font color="white"><b>#</b></font>',               ps('TH0', fontSize=9, alignment=TA_CENTER)),
+        Paragraph('<font color="white"><b>Description</b></font>',     ps('TH1', fontSize=9)),
+        Paragraph('<font color="white"><b>Qty</b></font>',             ps('TH2', fontSize=9, alignment=TA_RIGHT)),
+        Paragraph('<font color="white"><b>Unit Price (RWF)</b></font>', ps('TH3', fontSize=9, alignment=TA_RIGHT)),
+        Paragraph('<font color="white"><b>Total (RWF)</b></font>',     ps('TH4', fontSize=9, alignment=TA_RIGHT)),
+    ]]
     for i, item in enumerate(quote.line_items.all(), 1):
-        bg = WHITE if i % 2 == 1 else LGREY
         rows.append([
-            Paragraph(str(i), ps(f'N{i}', fontSize=9, textColor=DGREY, alignment=TA_CENTER)),
-            Paragraph(item.description, ps(f'D{i}', fontSize=9, textColor=NAVY)),
-            Paragraph(str(item.quantity), ps(f'Q{i}', fontSize=9, alignment=TA_RIGHT)),
-            Paragraph(f'{float(item.unit_price):,.0f}', ps(f'UP{i}', fontSize=9, alignment=TA_RIGHT)),
-            Paragraph(f'<b>{float(item.total):,.0f}</b>', ps(f'T{i}', fontSize=9, alignment=TA_RIGHT, textColor=NAVY)),
+            Paragraph(str(i), ps(f'n{i}', fontSize=9, textColor=DGREY, alignment=TA_CENTER)),
+            Paragraph(item.description, ps(f'd{i}', fontSize=9, textColor=NAVY)),
+            Paragraph(str(item.quantity), ps(f'q{i}', fontSize=9, alignment=TA_RIGHT)),
+            Paragraph(f'{float(item.unit_price):,.0f}', ps(f'u{i}', fontSize=9, alignment=TA_RIGHT)),
+            Paragraph(f'<b>{float(item.total):,.0f}</b>', ps(f't{i}', fontSize=9, alignment=TA_RIGHT, textColor=NAVY)),
         ])
-
-    # Subtotal / total row
     rows.append([
         '', '', '',
         Paragraph('<b>ORDER TOTAL</b>', ps('TotL', fontSize=10, textColor=NAVY, alignment=TA_RIGHT)),
@@ -671,16 +622,11 @@ def _build_order_pdf(quote):
 
     items_tbl = Table(rows, colWidths=[10*mm, 85*mm, 15*mm, 35*mm, 35*mm], repeatRows=1)
     items_tbl.setStyle(TableStyle([
-        # Header
         ('BACKGROUND',    (0, 0),  (-1, 0),  NAVY),
         ('ROWBACKGROUNDS',(0, 1),  (-1, -2), [WHITE, LGREY]),
-        # Total row
-        ('BACKGROUND',    (0, -1), (-1, -1), colors.HexColor('#FEF3C7')),
+        ('BACKGROUND',    (0, -1), (-1, -1), HexColor('#FEF3C7')),
         ('LINEABOVE',     (0, -1), (-1, -1), 1.5, GOLD),
-        # Grid
-        ('GRID',          (0, 0),  (-1, -2), 0.3, colors.HexColor('#E5E7EB')),
-        ('LINEBELOW',     (0, 0),  (-1, 0),  0,   NAVY),
-        # Padding
+        ('GRID',          (0, 0),  (-1, -2), 0.3, HexColor('#E5E7EB')),
         ('TOPPADDING',    (0, 0),  (-1, -1), 5),
         ('BOTTOMPADDING', (0, 0),  (-1, -1), 5),
         ('LEFTPADDING',   (0, 0),  (-1, -1), 6),
@@ -691,12 +637,12 @@ def _build_order_pdf(quote):
 
     # ── NOTES ─────────────────────────────────────────────────────────────────
     if quote.notes:
-        story.append(Spacer(1, 8*mm))
+        story.append(Spacer(1, 8 * mm))
         notes_tbl = Table([[
             Paragraph(
                 f'<font color="#64748B" size="8">NOTES</font><br/>'
                 f'<font color="#091928" size="9">{quote.notes}</font>',
-                ps('Notes', fontSize=9, leading=14)
+                ps('Notes', fontSize=9, leading=14),
             )
         ]], colWidths=[CW])
         notes_tbl.setStyle(TableStyle([
@@ -707,40 +653,16 @@ def _build_order_pdf(quote):
         ]))
         story.append(notes_tbl)
 
-    # ── PAYMENT TERMS ─────────────────────────────────────────────────────────
+    # ── PAYMENT INSTRUCTIONS ──────────────────────────────────────────────────
     if cfg.payment_instructions:
-        story.append(Spacer(1, 6*mm))
+        story.append(Spacer(1, 6 * mm))
         story.append(Paragraph(
             f'<font color="#64748B" size="8">PAYMENT INSTRUCTIONS</font><br/>'
             f'<font color="#091928" size="9">{cfg.payment_instructions}</font>',
-            ps('PayInfo', fontSize=9, leading=14)
+            ps('Pay', fontSize=9, leading=14),
         ))
 
-    # ── FOOTER ────────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 14*mm))
-    footer_tbl = Table([[
-        Paragraph(
-            f'<font color="white" size="9"><b>{cfg.company_name}</b></font><br/>'
-            f'<font color="#EA9D13" size="8">{cfg.company_tagline}</font>',
-            ps('FL', fontSize=9, leading=14, alignment=TA_LEFT)
-        ),
-        Paragraph(
-            f'<font color="white" size="8">{cfg.company_phone} &nbsp;·&nbsp; {cfg.company_email}</font>',
-            ps('FR', fontSize=8, leading=12, alignment=TA_RIGHT)
-        ),
-    ]], colWidths=[CW * 0.6, CW * 0.4])
-    footer_tbl.setStyle(TableStyle([
-        ('BACKGROUND',    (0, 0), (-1, -1), NAVY),
-        ('TOPPADDING',    (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('LEFTPADDING',   (0, 0), (0, -1),  12),
-        ('RIGHTPADDING',  (-1, 0), (-1, -1), 12),
-        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
-    ]))
-    story.append(footer_tbl)
-
-    doc.build(story)
-    buf.seek(0)
+    build_pdf(buf, f"Order {quote.ref_number}", story)
     return buf
 
 
