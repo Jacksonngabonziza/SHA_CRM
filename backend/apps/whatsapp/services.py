@@ -30,6 +30,8 @@ def send_message(to_wa_id: str, text: str) -> bool:
     }
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=10)
+        if not resp.ok:
+            logger.error("WhatsApp send failed %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return True
     except Exception:
